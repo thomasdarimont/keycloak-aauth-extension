@@ -17,10 +17,16 @@
 
 package org.keycloak.protocol.aauth.endpoints;
 
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuthErrorException;
 import org.keycloak.common.ClientConnection;
-import org.keycloak.common.util.Time;
 import org.keycloak.events.Details;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
@@ -31,6 +37,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
+import org.keycloak.models.utils.SystemClientUtil;
 import org.keycloak.protocol.aauth.AAuthTokenManager;
 import org.keycloak.protocol.aauth.forms.AAuthConsentBean;
 import org.keycloak.protocol.aauth.storage.AAuthPendingRequest;
@@ -46,10 +53,10 @@ import org.keycloak.theme.beans.AdvancedMessageFormatterMethod;
 import org.keycloak.theme.beans.LocaleBean;
 import org.keycloak.theme.beans.MessageFormatterMethod;
 import org.keycloak.theme.freemarker.FreeMarkerProvider;
-import org.keycloak.models.utils.SystemClientUtil;
 import org.keycloak.util.TokenUtil;
 import org.keycloak.utils.MediaType;
 
+import java.net.URI;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -61,16 +68,6 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.core.MultivaluedMap;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
-
-import java.net.URI;
 
 /**
  * Interaction endpoint for AAuth user consent flow.

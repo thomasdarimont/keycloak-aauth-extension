@@ -17,8 +17,8 @@ This extension provides the AAuth (Autonomous Authorization) protocol implementa
 
 ## Requirements
 
-- Keycloak 26.2.5 or later
-- Java 17 or later
+- Keycloak 26.7.3 or later
+- Java 21 or later
 
 ## Installation
 
@@ -192,7 +192,7 @@ The extension integrates with Keycloak via:
 
 - **Admin UI:** Admin UI components are not included in this extension. Configuration must be done via Admin API or realm attributes.
 - **Internal APIs:** This extension uses some internal Keycloak APIs (from `server-spi-private` and `services` modules). These APIs may change in future Keycloak versions.
-- **Version Compatibility:** Tested with Keycloak 26.2.5. Compatibility with other versions is not guaranteed.
+- **Version Compatibility:** Tested with Keycloak 26.7.3. Compatibility with other versions is not guaranteed.
 
 ## Development
 
@@ -217,9 +217,11 @@ keycloak-aauth-extension/
         │       └── util/             # Utility classes
         └── resources/
             └── META-INF/
-                ├── beans.xml         # JAX-RS configuration
-                └── services/         # SPI registrations
+                └── beans.xml         # JAX-RS configuration
 ```
+
+The `META-INF/services/` SPI registration files are generated at build time from
+`@AutoService` annotations on the factory classes.
 
 ## Troubleshooting
 
@@ -239,7 +241,7 @@ If the protocol is not available:
 1. Verify JAR is in `providers/` directory
 2. Rebuild Keycloak: `./kc.sh build`
 3. Check logs for SPI registration errors
-4. Verify `META-INF/services/` files are correct
+4. Verify the generated `META-INF/services/` files in the built JAR are correct
 
 ### Import Errors
 

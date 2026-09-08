@@ -1,4 +1,16 @@
 <#import "template.ftl" as layout>
+<#import "buttons.ftl" as buttons>
+
+<#macro consentForm>
+    <form class="${properties.kcFormClass!} ${properties.kcMarginTopClass!}" action="${aauth.consentActionUrl}" method="POST">
+        <input type="hidden" name="consent_code" value="${aauth.consentCode}">
+        <@buttons.actionGroup horizontal=true>
+            <@buttons.button id="kc-login" name="accept" label="doYes"/>
+            <@buttons.button id="kc-cancel" name="cancel" label="doNo" type="secondary"/>
+        </@buttons.actionGroup>
+    </form>
+</#macro>
+
 <@layout.registrationLayout bodyClass="oauth"; section>
     <#if section = "header">
         <p>${msg("aauthConsentTitle")}</p>
@@ -12,9 +24,9 @@
             <#if aauth.scopes?has_content>
                 <h3>${msg("aauthConsentScopes")}</h3>
                 <p>${msg("aauthConsentDescription")}</p>
-                <ul>
+                <ul class="${properties.kcListClass!}">
                     <#list aauth.scopes as scope>
-                        <li>${scope}</li>
+                        <li><span>${scope}</span></li>
                     </#list>
                 </ul>
             </#if>
@@ -26,10 +38,8 @@
                         <h4>${msg("aauthClarificationWaiting")}</h4>
                         <p><strong>${msg("aauthClarificationYourQuestion")}:</strong> ${aauth.clarification!}</p>
                         <p><em>${msg("aauthClarificationWaitingHint")}</em></p>
-                        <a class="${properties.kcButtonClass!} ${properties.kcButtonDefaultClass!}"
-                           href="${aauth.refreshUrl!}">
-                            ${msg("aauthClarificationRefresh")}
-                        </a>
+                        <@buttons.buttonLink id="kc-aauth-refresh" href="${aauth.refreshUrl!}"
+                                             label="aauthClarificationRefresh" class=["kcButtonSecondaryClass"]/>
                     </div>
                 <#elseif aauth.clarification?has_content && aauth.clarificationResponse?has_content>
                     <div id="kc-aauth-clarification-answered">
@@ -37,15 +47,7 @@
                         <p><strong>${msg("aauthClarificationYourQuestion")}:</strong> ${aauth.clarification}</p>
                         <p><strong>${msg("aauthClarificationAgentResponse")}:</strong> ${aauth.clarificationResponse}</p>
                     </div>
-                    <form class="${properties.kcFormClass!} ${properties.kcMarginTopClass!}" action="${aauth.consentActionUrl}" method="POST">
-                        <input type="hidden" name="consent_code" value="${aauth.consentCode}">
-                        <div id="kc-form-buttons">
-                            <div class="${properties.kcFormButtonsWrapperClass!}">
-                                <input class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonLargeClass!}" name="accept" id="kc-login" type="submit" value="${msg("doYes")}"/>
-                                <input class="${properties.kcButtonClass!} ${properties.kcButtonDefaultClass!} ${properties.kcButtonLargeClass!}" name="cancel" id="kc-cancel" type="submit" value="${msg("doNo")}"/>
-                            </div>
-                        </div>
-                    </form>
+                    <@consentForm/>
                 <#else>
                     <div id="kc-aauth-clarification-form">
                         <h4>${msg("aauthClarificationTitle")}</h4>
@@ -56,44 +58,22 @@
                             <input type="hidden" name="callback_url" value="${aauth.callbackUrl!}">
                             <input type="hidden" name="state" value="${aauth.state!}">
                             <div class="${properties.kcFormGroupClass!}">
-                                <textarea class="${properties.kcInputClass!}" name="clarification_question" rows="3" placeholder="${msg("aauthClarificationPlaceholder")}"></textarea>
+                                <span class="${properties.kcInputClass!}">
+                                    <textarea id="kc-aauth-clarification-question" name="clarification_question" rows="3"
+                                              placeholder="${msg("aauthClarificationPlaceholder")}"></textarea>
+                                </span>
                             </div>
-                            <div id="kc-form-buttons">
-                                <button class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!}" type="submit">${msg("aauthClarificationSubmit")}</button>
-                            </div>
+                            <@buttons.actionGroup horizontal=true>
+                                <@buttons.button id="kc-aauth-clarify-submit" label="aauthClarificationSubmit"/>
+                            </@buttons.actionGroup>
                         </form>
                         <hr/>
                     </div>
-                    <form class="${properties.kcFormClass!} ${properties.kcMarginTopClass!}" action="${aauth.consentActionUrl}" method="POST">
-                        <input type="hidden" name="consent_code" value="${aauth.consentCode}">
-                        <div id="kc-form-buttons">
-                            <div class="${properties.kcFormButtonsWrapperClass!}">
-                                <input class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonLargeClass!}" name="accept" id="kc-login" type="submit" value="${msg("doYes")}"/>
-                                <input class="${properties.kcButtonClass!} ${properties.kcButtonDefaultClass!} ${properties.kcButtonLargeClass!}" name="cancel" id="kc-cancel" type="submit" value="${msg("doNo")}"/>
-                            </div>
-                        </div>
-                    </form>
+                    <@consentForm/>
                 </#if>
             <#else>
-                <form class="${properties.kcFormClass!} ${properties.kcMarginTopClass!}" action="${aauth.consentActionUrl}" method="POST">
-                    <input type="hidden" name="consent_code" value="${aauth.consentCode}">
-                    <div class="${properties.kcFormGroupClass!}">
-                        <div id="kc-form-options">
-                            <div class="${properties.kcFormOptionsWrapperClass!}">
-                            </div>
-                        </div>
-
-                        <div id="kc-form-buttons">
-                            <div class="${properties.kcFormButtonsWrapperClass!}">
-                                <input class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonLargeClass!}" name="accept" id="kc-login" type="submit" value="${msg("doYes")}"/>
-                                <input class="${properties.kcButtonClass!} ${properties.kcButtonDefaultClass!} ${properties.kcButtonLargeClass!}" name="cancel" id="kc-cancel" type="submit" value="${msg("doNo")}"/>
-                            </div>
-                        </div>
-                    </div>
-                </form>
+                <@consentForm/>
             </#if>
-
-            <div class="clearfix"></div>
         </div>
     </#if>
 </@layout.registrationLayout>
