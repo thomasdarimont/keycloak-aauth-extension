@@ -56,7 +56,7 @@ class ReadmeExamplesIT {
     static final String REALM = "master";
 
     @Container
-    static final KeycloakContainer keycloak = new KeycloakContainer("quay.io/keycloak/keycloak:26.7.3")
+    static final KeycloakContainer keycloak = new KeycloakContainer("quay.io/keycloak/keycloak:26.7.4")
             .withProviderClassesFrom("target/classes");
 
     // HTTP/1.1 so the Host header is sent as a real header: the signed requests cover

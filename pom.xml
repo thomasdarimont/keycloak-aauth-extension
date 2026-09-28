@@ -31,7 +31,7 @@
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <keycloak.version>26.7.3</keycloak.version>
+        <keycloak.version>26.7.4</keycloak.version>
         <auto-service.version>1.1.1</auto-service.version>
         <testcontainers-keycloak.version>4.3.1</testcontainers-keycloak.version>
         <!-- keep in sync with the version used by testcontainers-keycloak -->

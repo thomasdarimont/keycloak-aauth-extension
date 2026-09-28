@@ -17,7 +17,7 @@ This extension provides the AAuth (Autonomous Authorization) protocol implementa
 
 ## Requirements
 
-- Keycloak 26.7.3 or later
+- Keycloak 26.7.4 or later
 - Java 21 or later
 
 ## Installation
@@ -192,7 +192,7 @@ The extension integrates with Keycloak via:
 
 - **Admin UI:** Admin UI components are not included in this extension. Configuration must be done via Admin API or realm attributes.
 - **Internal APIs:** This extension uses some internal Keycloak APIs (from `server-spi-private` and `services` modules). These APIs may change in future Keycloak versions.
-- **Version Compatibility:** Tested with Keycloak 26.7.3. Compatibility with other versions is not guaranteed.
+- **Version Compatibility:** Tested with Keycloak 26.7.4. Compatibility with other versions is not guaranteed.
 
 ## Development
 
