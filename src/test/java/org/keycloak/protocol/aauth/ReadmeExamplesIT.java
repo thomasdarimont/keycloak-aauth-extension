@@ -21,12 +21,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dasniko.testcontainers.keycloak.KeycloakContainer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.util.JsonSerialization;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.net.CookieManager;
+import java.net.CookieHandler;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -38,12 +40,16 @@ import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Signature;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -70,8 +76,7 @@ class ReadmeExamplesIT {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
-    // README: curl https://keycloak.example.com/realms/{realm}/.well-known/aauth-issuer
-    // (the provider's alias is "aauth-issuer.json", so that is the actual path)
+    // README: curl https://keycloak.example.com/realms/{realm}/.well-known/aauth-issuer.json
     @Test
     void wellKnownEndpointServesIssuerMetadata() throws Exception {
         HttpResponse<String> response = http.send(
@@ -124,7 +129,7 @@ class ReadmeExamplesIT {
     @Test
     void unsignedTokenRequestIsRejected() throws Exception {
         String form = formEncode(Map.of(
-                "grant_type", "auth",
+                "request_type", "auth",
                 "scope", "read write",
                 "resource_id", "https://resource.example.com"));
 
@@ -141,13 +146,13 @@ class ReadmeExamplesIT {
 
     // README: signed direct grant (no user consent):
     // POST /realms/{realm}/protocol/aauth/agent/token with Signature-Key/Signature-Input/Signature
-    // headers and grant_type=auth&scope=read write. The scopes do not require consent,
+    // headers and request_type=auth&scope=read write. The scopes do not require consent,
     // so an auth_token is issued directly.
     @Test
     void signedDirectGrantIssuesAuthToken() throws Exception {
         HttpMessageSigner agent = new HttpMessageSigner();
         String form = formEncode(Map.of(
-                "grant_type", "auth",
+                "request_type", "auth",
                 "scope", "read write",
                 "resource_id", "https://resource.example.com"));
 
@@ -161,40 +166,15 @@ class ReadmeExamplesIT {
         assertTrue(token.get("expires_in").asInt() > 0);
     }
 
-    // README: authorization code flow (with user consent).
-    // A consent-requiring scope (openid) yields a pending interaction (202) whose code
-    // is used for Step 1: GET /realms/{realm}/protocol/aauth/agent/auth?code=...
-    // which must redirect the user agent to the Keycloak login page.
+    // README: user consent flow. A consent-requiring scope (openid) yields a pending
+    // request (202) with an interaction code. Step 1 sends the user to
+    // GET /realms/{realm}/protocol/aauth/interact?code=... which redirects to the login page.
     @Test
     void signedConsentFlowRedirectsUserToLogin() throws Exception {
-        HttpMessageSigner agent = new HttpMessageSigner();
-        String form = formEncode(Map.of(
-                "grant_type", "auth",
-                "scope", "openid",
-                "redirect_uri", "https://agent.example.com/callback"));
+        PendingRequest pending = requestConsentScope(new HttpMessageSigner());
 
-        HttpResponse<String> pending = http.send(
-                agent.signedPost(baseUrl() + "/realms/" + REALM + "/protocol/aauth/agent/token", form),
-                HttpResponse.BodyHandlers.ofString());
-
-        assertEquals(202, pending.statusCode(), "body: " + pending.body());
-        JsonNode body = mapper.readTree(pending.body());
-        assertEquals("pending", body.get("status").asText());
-        assertEquals("interaction", body.get("require").asText());
-        String interactionCode = body.get("code").asText();
-        assertFalse(interactionCode.isEmpty());
-
-        // Step 1: the interaction URL accepts the code and sends the user agent to login
-        HttpClient browser = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .cookieHandler(new CookieManager())
-                .build();
-        HttpResponse<String> interaction = browser.send(
-                HttpRequest.newBuilder(URI.create(baseUrl() + "/realms/" + REALM
-                                + "/protocol/aauth/agent/auth?code=" + interactionCode))
-                        .GET().build(),
-                HttpResponse.BodyHandlers.ofString());
+        HttpClient browser = newBrowser();
+        HttpResponse<String> interaction = browser.send(get(pending.interactUrl()), HttpResponse.BodyHandlers.ofString());
 
         assertEquals(303, interaction.statusCode(), "body: " + interaction.body());
         String location = interaction.headers().firstValue("Location").orElse("");
@@ -202,6 +182,86 @@ class ReadmeExamplesIT {
                 "expected a redirect to the login page, got: " + location);
         assertTrue(location.contains("tab_id="),
                 "login redirect should carry the authentication session tab_id: " + location);
+    }
+
+    // README: the complete user consent flow, rendered with the keycloak.v2 (PatternFly 5)
+    // and the classic keycloak (PatternFly 3/4) login theme. The consent page must render
+    // under both themes: the user logs in, sees the consent page, accepts, and the agent
+    // receives the auth token by polling the pending URL (Step 2).
+    @ParameterizedTest(name = "loginTheme={0}")
+    @ValueSource(strings = {"keycloak.v2", "keycloak"})
+    void consentFlowRendersConsentPageAndIssuesTokenAfterAccept(String loginTheme) throws Exception {
+        setLoginTheme(loginTheme);
+
+        HttpMessageSigner agent = new HttpMessageSigner();
+        PendingRequest pending = requestConsentScope(agent);
+
+        // Agent polls the pending URL: still waiting for the user
+        HttpResponse<String> waiting = http.send(get(pending.location()), HttpResponse.BodyHandlers.ofString());
+        assertEquals(202, waiting.statusCode(), "body: " + waiting.body());
+        assertEquals("pending", mapper.readTree(waiting.body()).get("status").asText());
+
+        // Step 1: the user opens the interaction URL and logs in
+        HttpClient browser = newBrowser();
+        String consentPage = loginAndOpenConsentPage(browser, pending.interactUrl());
+
+        assertFalse(consentPage.contains("Failed to render consent screen"), "consent page: " + consentPage);
+        assertTrue(consentPage.contains("Agent Authorization Request"), "consent page: " + consentPage);
+        assertTrue(consentPage.contains("pseudonymous:"), "consent page should name the agent: " + consentPage);
+        assertTrue(consentPage.contains("<span>openid</span>"), "consent page should list the scope: " + consentPage);
+        assertTrue(consentPage.contains("id=\"kc-login\""), "consent page should offer an accept button: " + consentPage);
+        assertTrue(consentPage.contains("id=\"kc-cancel\""), "consent page should offer a cancel button: " + consentPage);
+        String expectedButtonClass = "keycloak".equals(loginTheme) ? "pf-c-button" : "pf-v5-c-button";
+        assertTrue(consentPage.contains(expectedButtonClass),
+                "consent page should be styled by the " + loginTheme + " theme: " + consentPage);
+
+        // The user accepts
+        String consentAction = attribute(consentPage, "<form[^>]*action=\"([^\"]*/protocol/aauth/interact/consent)\"");
+        String consentCode = attribute(consentPage, "name=\"consent_code\" value=\"([^\"]+)\"");
+        HttpResponse<String> accepted = browser.send(
+                HttpRequest.newBuilder(URI.create(consentAction))
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .POST(HttpRequest.BodyPublishers.ofString(formEncode(Map.of(
+                                "consent_code", consentCode,
+                                "accept", "Yes"))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(303, accepted.statusCode(), "body: " + accepted.body());
+        assertTrue(accepted.headers().firstValue("Location").orElse("").startsWith(CALLBACK_URL),
+                "after consent the user agent is sent to the redirect_uri: " + accepted.headers());
+
+        // Step 2: the agent polls the pending URL and receives the auth token
+        HttpResponse<String> completed = http.send(get(pending.location()), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, completed.statusCode(), "body: " + completed.body());
+        JsonNode token = mapper.readTree(completed.body());
+        assertEquals(3, token.get("auth_token").asText().split("\\.").length, "auth_token should be a JWT");
+        assertTrue(token.get("expires_in").asInt() > 0);
+    }
+
+    // The user may also deny the request; the agent then gets access_denied when polling.
+    @Test
+    void consentFlowDeniedByUserRejectsPendingRequest() throws Exception {
+        setLoginTheme("keycloak.v2");
+
+        PendingRequest pending = requestConsentScope(new HttpMessageSigner());
+        HttpClient browser = newBrowser();
+        String consentPage = loginAndOpenConsentPage(browser, pending.interactUrl());
+
+        String consentAction = attribute(consentPage, "<form[^>]*action=\"([^\"]*/protocol/aauth/interact/consent)\"");
+        String consentCode = attribute(consentPage, "name=\"consent_code\" value=\"([^\"]+)\"");
+        HttpResponse<String> denied = browser.send(
+                HttpRequest.newBuilder(URI.create(consentAction))
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .POST(HttpRequest.BodyPublishers.ofString(formEncode(Map.of(
+                                "consent_code", consentCode,
+                                "cancel", "No"))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertTrue(denied.statusCode() == 303 || denied.statusCode() == 200, "status: " + denied.statusCode());
+
+        HttpResponse<String> result = http.send(get(pending.location()), HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, result.statusCode(), "body: " + result.body());
+        assertEquals("access_denied", mapper.readTree(result.body()).get("error").asText());
     }
 
     // An unknown interaction code must not start a consent flow.
@@ -218,9 +278,8 @@ class ReadmeExamplesIT {
                 "body: " + response.body());
     }
 
-    // README: Step 2 exchanges the code for a token. An unknown code must be rejected
-    // with invalid_grant (a valid code only exists after user consent in a browser).
-    // Note: the token endpoint routes on request_type (the README's grant_type is legacy).
+    // README: request_type=code selects the authorization code request type.
+    // An unknown code must be rejected with invalid_grant.
     @Test
     void signedCodeExchangeRejectsUnknownCode() throws Exception {
         HttpMessageSigner agent = new HttpMessageSigner();
@@ -235,6 +294,151 @@ class ReadmeExamplesIT {
         assertEquals(400, response.statusCode(), "body: " + response.body());
         assertEquals("invalid_grant", mapper.readTree(response.body()).path("error").asText(),
                 "body: " + response.body());
+    }
+
+    static final String CALLBACK_URL = "https://agent.example.com/callback";
+
+    record PendingRequest(String location, String interactionCode, String interactUrl) {}
+
+    /** Signed token request for a consent-requiring scope; returns the 202 pending request. */
+    private PendingRequest requestConsentScope(HttpMessageSigner agent) throws Exception {
+        String form = formEncode(Map.of(
+                "request_type", "auth",
+                "scope", "openid",
+                "redirect_uri", CALLBACK_URL));
+
+        HttpResponse<String> pending = http.send(
+                agent.signedPost(baseUrl() + "/realms/" + REALM + "/protocol/aauth/agent/token", form),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(202, pending.statusCode(), "body: " + pending.body());
+        JsonNode body = mapper.readTree(pending.body());
+        assertEquals("pending", body.get("status").asText());
+        assertEquals("interaction", body.get("require").asText());
+        String interactionCode = body.get("code").asText();
+        assertFalse(interactionCode.isEmpty());
+        String location = body.get("location").asText();
+        assertTrue(location.startsWith(baseUrl() + "/realms/" + REALM + "/protocol/aauth/pending/"),
+                "location: " + location);
+
+        return new PendingRequest(location, interactionCode,
+                baseUrl() + "/realms/" + REALM + "/protocol/aauth/interact?code=" + interactionCode);
+    }
+
+    /**
+     * Drives a browser through the interaction URL: follow the redirect to the login page,
+     * submit the admin credentials, follow the redirect back and return the consent page HTML.
+     */
+    private String loginAndOpenConsentPage(HttpClient browser, String interactUrl) throws Exception {
+        HttpResponse<String> interaction = browser.send(get(interactUrl), HttpResponse.BodyHandlers.ofString());
+        assertEquals(303, interaction.statusCode(), "body: " + interaction.body());
+        String loginUrl = interaction.headers().firstValue("Location").orElseThrow();
+
+        HttpResponse<String> loginPage = browser.send(get(loginUrl), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, loginPage.statusCode(), "body: " + loginPage.body());
+        String loginAction = attribute(loginPage.body(), "<form[^>]*id=\"kc-form-login\"[^>]*action=\"([^\"]+)\"");
+
+        HttpResponse<String> loggedIn = browser.send(
+                HttpRequest.newBuilder(URI.create(loginAction))
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .POST(HttpRequest.BodyPublishers.ofString(formEncode(Map.of(
+                                "username", keycloak.getAdminUsername(),
+                                "password", keycloak.getAdminPassword(),
+                                "credentialId", ""))))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertTrue(loggedIn.statusCode() == 302 || loggedIn.statusCode() == 303,
+                "login should redirect back to the interaction endpoint, status=" + loggedIn.statusCode()
+                        + " body: " + loggedIn.body());
+        String backToInteract = loggedIn.headers().firstValue("Location").orElseThrow();
+        assertTrue(backToInteract.contains("/protocol/aauth/interact"), "location: " + backToInteract);
+
+        HttpResponse<String> consent = browser.send(get(backToInteract), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, consent.statusCode(), "body: " + consent.body());
+        return consent.body();
+    }
+
+    private void setLoginTheme(String loginTheme) throws Exception {
+        HttpResponse<String> update = http.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/admin/realms/" + REALM))
+                        .header("Authorization", "Bearer " + adminAccessToken())
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("{\"loginTheme\": \"" + loginTheme + "\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, update.statusCode(), "body: " + update.body());
+    }
+
+    private static HttpClient newBrowser() {
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .cookieHandler(new BrowserCookieJar())
+                .build();
+    }
+
+    /**
+     * Cookie jar that behaves like a browser on localhost. The JDK CookieManager cannot be
+     * used here: it rejects cookies from hosts without a dot (localhost) and never sends
+     * "Secure" cookies over plain http, but Keycloak always marks its session cookies
+     * SameSite=None; Secure (browsers treat localhost as a secure context).
+     */
+    static class BrowserCookieJar extends CookieHandler {
+
+        private final Map<String, String> cookies = new LinkedHashMap<>();
+
+        @Override
+        public synchronized Map<String, List<String>> get(URI uri, Map<String, List<String>> requestHeaders) {
+            if (cookies.isEmpty()) {
+                return Map.of();
+            }
+            String header = cookies.entrySet().stream()
+                    .map(e -> e.getKey() + "=" + e.getValue())
+                    .collect(Collectors.joining("; "));
+            return Map.of("Cookie", List.of(header));
+        }
+
+        @Override
+        public synchronized void put(URI uri, Map<String, List<String>> responseHeaders) {
+            for (Map.Entry<String, List<String>> header : responseHeaders.entrySet()) {
+                if (header.getKey() == null || !header.getKey().equalsIgnoreCase("Set-Cookie")) {
+                    continue;
+                }
+                for (String setCookie : header.getValue()) {
+                    String[] attributes = setCookie.split(";");
+                    int eq = attributes[0].indexOf('=');
+                    if (eq <= 0) {
+                        continue;
+                    }
+                    String name = attributes[0].substring(0, eq).trim();
+                    String value = attributes[0].substring(eq + 1).trim();
+                    boolean expired = false;
+                    for (int i = 1; i < attributes.length; i++) {
+                        if (attributes[i].trim().equalsIgnoreCase("Max-Age=0")) {
+                            expired = true;
+                        }
+                    }
+                    if (expired || value.isEmpty()) {
+                        cookies.remove(name);
+                    } else {
+                        cookies.put(name, value);
+                    }
+                }
+            }
+        }
+    }
+
+    private static HttpRequest get(String url) {
+        return HttpRequest.newBuilder(URI.create(url)).GET().build();
+    }
+
+    /** Extracts the first capture group of the pattern from HTML, unescaping &amp;. */
+    private static String attribute(String html, String regex) {
+        Matcher m = Pattern.compile(regex).matcher(html);
+        assertTrue(m.find(), "pattern " + regex + " not found in: " + html);
+        String value = m.group(1);
+        assertNotNull(value);
+        return value.replace("&amp;", "&");
     }
 
     /**
