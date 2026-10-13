@@ -17,7 +17,7 @@ This extension provides the AAuth (Autonomous Authorization) protocol implementa
 
 ## Requirements
 
-- Keycloak 26.7.4 or later
+- Keycloak 26.8.1 or later
 - Java 21 or later
 
 ## Installation
