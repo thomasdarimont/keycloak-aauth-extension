@@ -100,7 +100,7 @@ public class AAuthLoginProtocolFactory implements LoginProtocolFactory {
     }
 
     @Override
-    public void createDefaultClientScopes(RealmModel newRealm, boolean addScopesToExistingClients) {
+    public void createDefaultClientScopes(KeycloakSession session, RealmModel newRealm, boolean addScopesToExistingClients) {
         // No default client scopes for Phase 2
     }
 

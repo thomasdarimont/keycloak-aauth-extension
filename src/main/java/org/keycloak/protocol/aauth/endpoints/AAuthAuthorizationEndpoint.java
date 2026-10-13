@@ -183,7 +183,7 @@ public class AAuthAuthorizationEndpoint {
             AuthenticationManager.AuthResult authResult =
                     AuthenticationManager.authenticateIdentityCookie(session, realm, true);
             if (authResult != null) {
-                userSession = authResult.getSession();
+                userSession = authResult.session();
             }
         }
         if (userSession == null) {
@@ -259,7 +259,7 @@ public class AAuthAuthorizationEndpoint {
         // Verify user is authenticated
         AuthenticationManager.AuthResult authResult =
                 AuthenticationManager.authenticateIdentityCookie(session, realm, true);
-        if (authResult == null || authResult.getSession() == null) {
+        if (authResult == null || authResult.session() == null) {
             return showErrorPage("User session not found. Please log in again.");
         }
 
@@ -364,13 +364,13 @@ public class AAuthAuthorizationEndpoint {
         AuthenticationManager.AuthResult authResult =
                 AuthenticationManager.authenticateIdentityCookie(session, realm, true);
 
-        if (authResult == null || authResult.getSession() == null) {
+        if (authResult == null || authResult.session() == null) {
             logger.infof("AAuth interaction: user not authenticated, redirecting to login (code=%s)", interactionCode);
             return redirectToLogin(interactionCode, pending.getId(), callbackUrl, state);
         }
 
-        UserSessionModel userSession = authResult.getSession();
-        UserModel user = authResult.getUser();
+        UserSessionModel userSession = authResult.session();
+        UserModel user = authResult.user();
 
         // Skip consent screen if user already consented this session (unless prompt=consent)
         // Never skip for clarification-enabled requests — they always require deliberate interaction
